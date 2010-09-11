@@ -15,23 +15,33 @@ from models import Circle1, Circle2, Circle3, Circle4, Circle5, Circle6
 from models import ExternalDependency
 
 
-class (TestCase):
+class TestFixtures(TestCase):
 
     def test_duplicate_pk(self):
         """
         Arguments:
         - `self`:
         """
-# >>> from django.core import management
+        # Load a fixture that uses PK=1
+        management.call_command(
+            'loaddata',
+            'sequence',
+            verbosity=0,
+            commit=False
+            )
 
-# # Load a fixture that uses PK=1
-# >>> management.call_command('loaddata', 'sequence', verbosity=0)
+        # Create a new animal. Without a sequence reset, this new object
+        # will take a PK of 1 (on Postgres), and the save will fail.
+        # This is a regression test for ticket #3790.
+        animal = Animal(
+            name='Platypus',
+            latin_name='Ornithorhynchus anatinus',
+            count=2,
+            weight=2.2
+            )
+        animal.save()
+        self.assertEqual(animal.id, 2)
 
-# # Create a new animal. Without a sequence reset, this new object
-# # will take a PK of 1 (on Postgres), and the save will fail.
-# # This is a regression test for ticket #3790.
-# >>> animal = Animal(name='Platypus', latin_name='Ornithorhynchus anatinus', count=2, weight=2.2)
-# >>> animal.save()
 
 # ###############################################
 # # Regression test for ticket #4558 -- pretty printing of XML fixtures
