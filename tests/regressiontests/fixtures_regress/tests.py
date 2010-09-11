@@ -82,81 +82,21 @@ class TestFixtures(TestCase):
             )
         self.assertEqual(Absolute.load_count, 1)
 
-
-class TestFixtureLoadErrors(TestCase):
-    """
-    Test for ticket #4371 -- fixture loading fails silently in testcases
-    Validate that error conditions are caught correctly
-    """
-    def setUp(self):
+    def test_pg_sequence_resetting_checks(self):
         """
-        redirect stderr for the next few tests...
-        """
-        sys.stderr = StringIO()
-
-    def tearDown(self):
-        sys.stderr = sys.__stderr__
-
-    def test_unknown_format(self):
-        """
-        Loading data of an unknown format should fail        
+        Test for ticket #7565 -- PostgreSQL sequence resetting checks shouldn't
+        ascend to parent models when inheritance is used
+        (since they are treated individually).
         """
         management.call_command(
             'loaddata',
-            'bad_fixture1.unkn',
+            'model-inheritance.json',
             verbosity=0,
             commit=False
             )
-        self.assertEqual(sys.stderr.getvalue(), "Problem installing fixture 'bad_fixture1': unkn is not a known serialization format.\n")
+        self.assertEqual(Parent.objects.all()[0].id, 1)
+        self.assertEqual(Child.objects.all()[0].id, 1)
 
-    def test_invalid_data(self):
-        """
-        Loading a fixture file with invalid data using explicit filename
-        """
-        management.call_command(
-            'loaddata',
-            'bad_fixture2.xml',
-            verbosity=0,
-            commit=False
-            )
-        self.assertEqual(sys.stderr.getvalue(), "No fixture data found for 'bad_fixture2'. (File format may be invalid.)\n")
-
-    def test_invalid_data_no_ext(self):
-        """
-        Loading a fixture file with invalid data without file extension
-        """
-        management.call_command(
-            'loaddata',
-            'bad_fixture2',
-            verbosity=0,
-            commit=False
-            )
-        self.assertEqual(sys.stderr.getvalue(), "No fixture data found for 'bad_fixture2'. (File format may be invalid.)\n")
-
-
-# # Loading a fixture file with invalid data without file extension
-# >>> management.call_command('loaddata', 'bad_fixture2', verbosity=0)
-# No fixture data found for 'bad_fixture2'. (File format may be invalid.)
-
-# # Loading a fixture file with no data returns an error
-# >>> management.call_command('loaddata', 'empty', verbosity=0)
-# No fixture data found for 'empty'. (File format may be invalid.)
-
-# # If any of the fixtures contain an error, loading is aborted
-# # (Regression for #9011 - error message is correct)
-# >>> management.call_command('loaddata', 'bad_fixture2', 'animal', verbosity=0)
-# No fixture data found for 'bad_fixture2'. (File format may be invalid.)
-
-# >>> sys.stderr = savestderr
-
-# ###############################################
-# # Test for ticket #7565 -- PostgreSQL sequence resetting checks shouldn't
-# # ascend to parent models when inheritance is used (since they are treated
-# # individually).
-
-# >>> management.call_command('loaddata', 'model-inheritance.json', verbosity=0)
-
-# ###############################################
 # # Test for ticket #13030 -- natural keys deserialize with fk to inheriting model
 
 # # load data with natural keys
@@ -299,3 +239,90 @@ class TestFixtureLoadErrors(TestCase):
 
 # """}
 
+
+class TestFixtureLoadErrors(TestCase):
+    """
+    Test for ticket #4371 -- fixture loading fails silently in testcases
+    Validate that error conditions are caught correctly
+    """
+    def setUp(self):
+        """
+        redirect stderr for the next few tests...
+        """
+        sys.stderr = StringIO()
+
+    def tearDown(self):
+        sys.stderr = sys.__stderr__
+
+    def test_unknown_format(self):
+        """
+        Loading data of an unknown format should fail        
+        """
+        management.call_command(
+            'loaddata',
+            'bad_fixture1.unkn',
+            verbosity=0,
+            commit=False
+            )
+        self.assertEqual(sys.stderr.getvalue(), "Problem installing fixture 'bad_fixture1': unkn is not a known serialization format.\n")
+
+    def test_invalid_data(self):
+        """
+        Loading a fixture file with invalid data using explicit filename
+        """
+        management.call_command(
+            'loaddata',
+            'bad_fixture2.xml',
+            verbosity=0,
+            commit=False
+            )
+        self.assertEqual(sys.stderr.getvalue(), "No fixture data found for 'bad_fixture2'. (File format may be invalid.)\n")
+
+    def test_invalid_data_no_ext(self):
+        """
+        Loading a fixture file with invalid data without file extension
+        """
+        management.call_command(
+            'loaddata',
+            'bad_fixture2',
+            verbosity=0,
+            commit=False
+            )
+        self.assertEqual(sys.stderr.getvalue(), "No fixture data found for 'bad_fixture2'. (File format may be invalid.)\n")
+
+    def test_empty(self):
+        """
+        Loading a fixture file with no data returns an error
+        """
+        management.call_command(
+            'loaddata',
+            'empty',
+            verbosity=0,
+            commit=False
+            )
+        self.assertEqual(sys.stderr.getvalue(), "No fixture data found for 'empty'. (File format may be invalid.)\n")
+
+    def test_abort_loaddata_on_error(self):
+        """
+        If any of the fixtures contain an error, loading is aborted
+        """
+        management.call_command(
+            'loaddata',
+            'empty',
+            verbosity=0,
+            commit=False
+            )
+        self.assertEqual(sys.stderr.getvalue(), "No fixture data found for 'empty'. (File format may be invalid.)\n")
+
+    def test_error_message(self):
+        """
+        (Regression for #9011 - error message is correct)
+        """
+        management.call_command(
+            'loaddata',
+            'bad_fixture2',
+            'animal',
+            verbosity=0,
+            commit=False
+            )
+        self.assertEqual(sys.stderr.getvalue(), "No fixture data found for 'bad_fixture2'. (File format may be invalid.)\n")
