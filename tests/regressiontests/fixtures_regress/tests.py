@@ -182,11 +182,43 @@ class TestFixtures(TestCase):
         signals.pre_save.disconnect(animal_pre_save_check)
         sys.stdout = sys.__stdout__
 
-# ###############################################
-# # Regression for #11286 -- Ensure that dumpdata honors the default manager
-# # Dump the current contents of the database as a JSON fixture
-# >>> management.call_command('dumpdata', 'fixtures_regress.animal', format='json')
-# [{"pk": 1, "model": "fixtures_regress.animal", "fields": {"count": 3, "weight": 1.2, "name": "Lion", "latin_name": "Panthera leo"}}, {"pk": 2, "model": "fixtures_regress.animal", "fields": {"count": 2, "weight": 2.2, "name": "Platypus", "latin_name": "Ornithorhynchus anatinus"}}, {"pk": 10, "model": "fixtures_regress.animal", "fields": {"count": 42, "weight": 1.2, "name": "Emu", "latin_name": "Dromaius novaehollandiae"}}]
+    def test_dumpdata_uses_default_manager(self):
+        """
+        Regression for #11286
+        Ensure that dumpdata honors the default manager
+        Dump the current contents of the database as a JSON fixture
+        """
+        sys.stdout = StringIO()
+        management.call_command(
+            'loaddata',
+            'animal.xml',
+            verbosity=0,
+            commit=False
+            )
+        management.call_command(
+            'loaddata',
+            'sequence.json',
+            verbosity=0,
+            commit=False
+            )
+        animal = Animal(
+            name='Platypus',
+            latin_name='Ornithorhynchus anatinus',
+            count=2,
+            weight=2.2
+            )
+        animal.save()
+        management.call_command(
+            'dumpdata',
+            'fixtures_regress.animal',
+            format='json',
+            )
+        self.assertEqual(
+            sys.stdout.getvalue(),
+            """[{"pk": 1, "model": "fixtures_regress.animal", "fields": {"count": 3, "weight": 1.2, "name": "Lion", "latin_name": "Panthera leo"}}, {"pk": 10, "model": "fixtures_regress.animal", "fields": {"count": 42, "weight": 1.2, "name": "Emu", "latin_name": "Dromaius novaehollandiae"}}, {"pk": 11, "model": "fixtures_regress.animal", "fields": {"count": 2, "weight": 2.2000000000000002, "name": "Platypus", "latin_name": "Ornithorhynchus anatinus"}}]"""
+            )
+        sys.stdout = sys.__stdout__
+
 
 # ###############################################
 # # Regression for #11428 - Proxy models aren't included when you dumpdata
