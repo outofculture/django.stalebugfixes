@@ -1,7 +1,12 @@
 # -*- coding: utf-8 -*-
 # Unittests for fixtures.
+import os
+import sys
+try:
+    from cStringIO import StringIO
+except ImportError:
+    from StringIO import StringIO
 
-from django.conf import settings
 from django.core import management
 from django.test import TestCase
 
@@ -42,43 +47,92 @@ class TestFixtures(TestCase):
         animal.save()
         self.assertEqual(animal.id, 2)
 
+    def test_pretty_print_xml(self):
+        """
+        Arguments:
+        - `self`:
+        Regression test for ticket #4558 -- pretty printing of XML fixtures
+        doesn't affect parsing of None values.
+        """
+        # Load a pretty-printed XML fixture with Nulls.
+        management.call_command(
+            'loaddata',
+            'pretty.xml',
+            verbosity=0,
+            commit=False
+            )
+        self.assertEqual(Stuff.objects.all()[0].name, None)
+        self.assertEqual(Stuff.objects.all()[0].owner, None)
 
-# ###############################################
-# # Regression test for ticket #4558 -- pretty printing of XML fixtures
-# # doesn't affect parsing of None values.
+    def test_absolute_path(self):
+        """
+        Regression test for ticket #6436 --
+        os.path.join will throw away the initial parts of a path if it
+        encounters an absolute path.
+        This means that if a fixture is specified as an absolute path,
+        we need to make sure we don't discover the absolute path in every
+        fixture directory.
+        """
+        load_absolute_path = os.path.join(os.path.dirname(__file__), 'fixtures', 'absolute.json')
+        management.call_command(
+            'loaddata',
+            load_absolute_path,
+            verbosity=0,
+            commit=False
+            )
+        self.assertEqual(Absolute.load_count, 1)
 
-# # Load a pretty-printed XML fixture with Nulls.
-# >>> management.call_command('loaddata', 'pretty.xml', verbosity=0)
-# >>> Stuff.objects.all()
-# [<Stuff: None is owned by None>]
 
-# ###############################################
-# # Regression test for ticket #6436 --
-# # os.path.join will throw away the initial parts of a path if it encounters
-# # an absolute path. This means that if a fixture is specified as an absolute path,
-# # we need to make sure we don't discover the absolute path in every fixture directory.
+class TestFixtureLoadErrors(TestCase):
+    """
+    Test for ticket #4371 -- fixture loading fails silently in testcases
+    Validate that error conditions are caught correctly
+    """
+    def setUp(self):
+        """
+        redirect stderr for the next few tests...
+        """
+        sys.stderr = StringIO()
 
-# >>> load_absolute_path = os.path.join(os.path.dirname(__file__), 'fixtures', 'absolute.json')
-# >>> management.call_command('loaddata', load_absolute_path, verbosity=0)
-# >>> Absolute.load_count
-# 1
+    def tearDown(self):
+        sys.stderr = sys.__stderr__
 
-# ###############################################
-# # Test for ticket #4371 -- fixture loading fails silently in testcases
-# # Validate that error conditions are caught correctly
+    def test_unknown_format(self):
+        """
+        Loading data of an unknown format should fail        
+        """
+        management.call_command(
+            'loaddata',
+            'bad_fixture1.unkn',
+            verbosity=0,
+            commit=False
+            )
+        self.assertEqual(sys.stderr.getvalue(), "Problem installing fixture 'bad_fixture1': unkn is not a known serialization format.\n")
 
-# # redirect stderr for the next few tests...
-# >>> import sys
-# >>> savestderr = sys.stderr
-# >>> sys.stderr = sys.stdout
+    def test_invalid_data(self):
+        """
+        Loading a fixture file with invalid data using explicit filename
+        """
+        management.call_command(
+            'loaddata',
+            'bad_fixture2.xml',
+            verbosity=0,
+            commit=False
+            )
+        self.assertEqual(sys.stderr.getvalue(), "No fixture data found for 'bad_fixture2'. (File format may be invalid.)\n")
 
-# # Loading data of an unknown format should fail
-# >>> management.call_command('loaddata', 'bad_fixture1.unkn', verbosity=0)
-# Problem installing fixture 'bad_fixture1': unkn is not a known serialization format.
+    def test_invalid_data_no_ext(self):
+        """
+        Loading a fixture file with invalid data without file extension
+        """
+        management.call_command(
+            'loaddata',
+            'bad_fixture2',
+            verbosity=0,
+            commit=False
+            )
+        self.assertEqual(sys.stderr.getvalue(), "No fixture data found for 'bad_fixture2'. (File format may be invalid.)\n")
 
-# # Loading a fixture file with invalid data using explicit filename
-# >>> management.call_command('loaddata', 'bad_fixture2.xml', verbosity=0)
-# No fixture data found for 'bad_fixture2'. (File format may be invalid.)
 
 # # Loading a fixture file with invalid data without file extension
 # >>> management.call_command('loaddata', 'bad_fixture2', verbosity=0)
