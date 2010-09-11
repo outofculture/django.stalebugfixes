@@ -17,8 +17,8 @@ from models import Animal, Stuff
 from models import Absolute, Parent, Child
 from models import Article, Widget
 from models import Store, Person, Book
-from models import NKManager, NKChild, RefToNKChild
-from models import Circle1, Circle2, Circle3, Circle4, Circle5, Circle6
+from models import NKChild, RefToNKChild
+from models import Circle1, Circle2, Circle3
 from models import ExternalDependency
 from models import animal_pre_save_check
 
@@ -108,40 +108,64 @@ class TestFixtures(TestCase):
         self.assertEqual(Parent.objects.all()[0].id, 1)
         self.assertEqual(Child.objects.all()[0].id, 1)
 
-    # def test_nk_deserialize(self):
-    #     """
-    #     Test for ticket #13030
-    #     natural keys deserialize with fk to inheriting model
-    #     """
-    #     import pdb; pdb.set_trace() # FIXME
-    #     management.call_command(
-    #         'loaddata',
-    #         'nk-inheritance.json',
-    #         verbosity=0,
-    #         commit=False
-    #         )
-        # self.assertEqual(Parent.objects.all()[0].id, 1)
-        # self.assertEqual(Child.objects.all()[0].id, 1)
+    def test_nk_deserialize(self):
+        """
+        Test for ticket #13030
+        natural keys deserialize with fk to inheriting model
+        """
+        management.call_command(
+            'loaddata',
+            'model-inheritance.json',
+            verbosity=0,
+            commit=False
+            )
+        management.call_command(
+            'loaddata',
+            'nk-inheritance.json',
+            verbosity=0,
+            commit=False
+            )
+        self.assertEqual(
+            NKChild.objects.get(pk=1).data,
+            'apple'
+            )
 
+        self.assertEqual(
+            RefToNKChild.objects.get(pk=1).nk_fk.data,
+            'apple'
+            )
 
-
-# # load data with natural keys
-# >>> management.call_command('loaddata', 'nk-inheritance.json', verbosity=0)
-
-# >>> NKChild.objects.get(pk=1)
-# <NKChild: NKChild fred:apple>
-
-# >>> RefToNKChild.objects.get(pk=1)
-# <RefToNKChild: my text: Reference to NKChild fred:apple [NKChild fred:apple]>
-
-# # ... and again in XML
-# >>> management.call_command('loaddata', 'nk-inheritance2.xml', verbosity=0)
-
-# >>> NKChild.objects.get(pk=2)
-# <NKChild: NKChild james:banana>
-
-# >>> RefToNKChild.objects.get(pk=2)
-# <RefToNKChild: other text: Reference to NKChild fred:apple [NKChild fred:apple, NKChild james:banana]>
+    def test_nk_deserialize_xml(self):
+        """
+        Test for ticket #13030
+        natural keys deserialize with fk to inheriting model
+        """
+        management.call_command(
+            'loaddata',
+            'model-inheritance.json',
+            verbosity=0,
+            commit=False
+            )
+        management.call_command(
+            'loaddata',
+            'nk-inheritance.json',
+            verbosity=0,
+            commit=False
+            )
+        management.call_command(
+            'loaddata',
+            'nk-inheritance2.xml',
+            verbosity=0,
+            commit=False
+            )
+        self.assertEqual(
+            NKChild.objects.get(pk=2).data,
+            'banana'
+            )
+        self.assertEqual(
+            RefToNKChild.objects.get(pk=2).nk_fk.data,
+            'apple'
+            )
 
     def test_mysql_close_connection_after_loaddata(self):
         """
@@ -350,42 +374,67 @@ class TestFixtures(TestCase):
             [('fixtures_regress', [Person, Circle2, Circle1, Store, Book])],
             )
 
-# # A tight circular dependency
-# >>> sort_dependencies([('fixtures_regress', [Person, Circle2, Circle1, Store, Book])])
-# Traceback (most recent call last):
-# ...
-# CommandError: Can't resolve dependencies for fixtures_regress.Circle1, fixtures_regress.Circle2 in serialized app list.
+    def test_dependency_sorting_tight_circular_2(self):
+        self.assertRaisesMessage(
+            CommandError,
+            """Can't resolve dependencies for fixtures_regress.Circle1, fixtures_regress.Circle2 in serialized app list.""",
+            sort_dependencies,
+            [('fixtures_regress', [Circle1, Book, Circle2])],
+            )
 
-# >>> sort_dependencies([('fixtures_regress', [Circle1, Book, Circle2])])
-# Traceback (most recent call last):
-# ...
-# CommandError: Can't resolve dependencies for fixtures_regress.Circle1, fixtures_regress.Circle2 in serialized app list.
+    def test_dependency_self_referential(self):
+        self.assertRaisesMessage(
+            CommandError,
+            """Can't resolve dependencies for fixtures_regress.Circle3 in serialized app list.""",
+            sort_dependencies,
+            [('fixtures_regress', [Book, Circle3])],
+            )
 
-# # A self referential dependency
-# >>> sort_dependencies([('fixtures_regress', [Book, Circle3])])
-# Traceback (most recent call last):
-# ...
-# CommandError: Can't resolve dependencies for fixtures_regress.Circle3 in serialized app list.
+    def test_dependency_sorting_long(self):
+        self.assertRaisesMessage(
+            CommandError,
+            """Can't resolve dependencies for fixtures_regress.Circle1, fixtures_regress.Circle2, fixtures_regress.Circle3 in serialized app list.""",
+            sort_dependencies,
+            [('fixtures_regress', [Person, Circle2, Circle1, Circle3, Store, Book])],
+            )
 
-# # A long circular dependency
-# >>> sort_dependencies([('fixtures_regress', [Person, Circle2, Circle1, Circle3, Store, Book])])
-# Traceback (most recent call last):
-# ...
-# CommandError: Can't resolve dependencies for fixtures_regress.Circle1, fixtures_regress.Circle2, fixtures_regress.Circle3 in serialized app list.
+    def test_dependency_sorting_normal(self):
+        sorted_deps = sort_dependencies(
+            [('fixtures_regress', [Person, ExternalDependency, Book])]
+            )
+        self.assertEqual(
+            sorted_deps,
+            [Person, Book, ExternalDependency]
+            )
 
-# # A dependency on a normal, non-natural-key model
-# >>> sort_dependencies([('fixtures_regress', [Person, ExternalDependency, Book])])
-# [<class 'regressiontests.fixtures_regress.models.Person'>, <class 'regressiontests.fixtures_regress.models.Book'>, <class 'regressiontests.fixtures_regress.models.ExternalDependency'>]
-
-# ###############################################
-# # Check that normal primary keys still work
-# # on a model with natural key capabilities
-
-# >>> management.call_command('loaddata', 'non_natural_1.json', verbosity=0)
-# >>> management.call_command('loaddata', 'non_natural_2.xml', verbosity=0)
-
-# >>> Book.objects.all()
-# [<Book: Cryptonomicon by Neal Stephenson (available at Amazon, Borders)>, <Book: Ender's Game by Orson Scott Card (available at Collins Bookstore)>, <Book: Permutation City by Greg Egan (available at Angus and Robertson)>]
+    def test_normal_pk(self):
+        """
+        Check that normal primary keys still work
+        on a model with natural key capabilities
+        """
+        management.call_command(
+            'loaddata',
+            'non_natural_1.json',
+            verbosity=0,
+            commit=False
+            )
+        management.call_command(
+            'loaddata',
+            'forward_ref_lookup.json',
+            verbosity=0,
+            commit=False
+            )
+        management.call_command(
+            'loaddata',
+            'non_natural_2.xml',
+            verbosity=0,
+            commit=False
+            )
+        books = Book.objects.all()
+        self.assertEqual(
+            books.__repr__(),
+            """[<Book: Cryptonomicon by Neal Stephenson (available at Amazon, Borders)>, <Book: Ender's Game by Orson Scott Card (available at Collins Bookstore)>, <Book: Permutation City by Greg Egan (available at Angus and Robertson)>]"""
+            )
 
 
 class TestFixtureLoadErrors(TestCase):
