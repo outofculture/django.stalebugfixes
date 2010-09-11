@@ -231,3 +231,45 @@ class ExternalDependency(models.Model):
     def natural_key(self):
         return self.name
     natural_key.dependencies = ['fixtures_regress.book']
+
+
+class Tagger(models.Model):
+    name = models.CharField(max_length=20)
+    topics = models.ManyToManyField("Tag", through="TaggerTag")
+
+    def natural_key(self):
+        return self.name
+
+
+class Posting(models.Model):
+    tagger = models.ForeignKey(Tagger)
+    text = models.TextField()
+    time = models.DateTimeField()
+
+    def natural_key(self):
+        return (self.tagger.username, self.time)
+    natural_key.dependencies = ['fixtures_regress.tagger']
+
+
+class Tag(models.Model):
+    name = models.CharField(max_length=20)
+    postings = models.ManyToManyField(Posting, through="PostingTag")
+
+    def natural_key(self):
+        return self.name
+
+
+class PostingTag(models.Model):
+    tag = models.ForeignKey(Tag)
+    posting = models.ForeignKey(Posting)
+
+    def natural_key(self):
+        return (self.tag.natural_key(), self.posting.natural_key())
+
+
+class TaggerTag(models.Model):
+    tagger = models.ForeignKey(Tagger)
+    tag = models.ForeignKey(Tag)
+
+    def natural_key(self):
+        return (self.tag.natural_key(), self.tagger.natural_key())

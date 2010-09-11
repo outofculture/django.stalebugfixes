@@ -21,6 +21,7 @@ from models import NKChild, RefToNKChild
 from models import Circle1, Circle2, Circle3
 from models import ExternalDependency
 from models import animal_pre_save_check
+from models import Tagger, Posting, Tag, TaggerTag, PostingTag
 
 
 class TestFixtures(TestCase):
@@ -436,6 +437,26 @@ class TestFixtures(TestCase):
             """[<Book: Cryptonomicon by Neal Stephenson (available at Amazon, Borders)>, <Book: Ender's Game by Orson Scott Card (available at Collins Bookstore)>, <Book: Permutation City by Greg Egan (available at Angus and Robertson)>]"""
             )
 
+    def test_dumpdata_of_dependencies_across_many_to_many(self):
+        from datetime import datetime
+        tagger = Tagger.objects.create(name='some punk')
+        posting = Posting.objects.create(tagger=tagger, time=datetime.now(),
+                                         text='Eat your greens.',)
+        tag = Tag.objects.create(name='good advice')
+        PostingTag.objects.create(posting=posting, tag=tag)
+        TaggerTag.objects.create(tagger=tagger, tag=tag)
+
+        management.call_command(
+            'dumpdata',
+            'fixtures_regress.tagger',
+            'fixtures_regress.posting',
+            'fixtures_regress.tag',
+            'fixtures_regress.taggertag',
+            'fixtures_regress.postingtag',
+            verbosity=0,
+            format='json',
+            use_natural_keys=True,
+            )
 
 class TestFixtureLoadErrors(TestCase):
     """
