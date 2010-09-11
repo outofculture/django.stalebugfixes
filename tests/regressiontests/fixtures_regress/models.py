@@ -247,7 +247,7 @@ class Posting(models.Model):
     time = models.DateTimeField()
 
     def natural_key(self):
-        return (self.tagger.username, self.time)
+        return (self.tagger.name, self.time)
     natural_key.dependencies = ['fixtures_regress.tagger']
 
 
