@@ -8,6 +8,7 @@ except ImportError:
     from StringIO import StringIO
 
 from django.core import management
+from django.db.models import signals
 from django.test import TestCase
 
 from models import Animal, Plant, Stuff
@@ -18,14 +19,14 @@ from models import Store, Person, Book
 from models import NKManager, NKChild, RefToNKChild
 from models import Circle1, Circle2, Circle3, Circle4, Circle5, Circle6
 from models import ExternalDependency
+from models import animal_pre_save_check
 
 
 class TestFixtures(TestCase):
 
     def test_duplicate_pk(self):
         """
-        Arguments:
-        - `self`:
+        This is a regression test for ticket #3790.
         """
         # Load a fixture that uses PK=1
         management.call_command(
@@ -37,7 +38,7 @@ class TestFixtures(TestCase):
 
         # Create a new animal. Without a sequence reset, this new object
         # will take a PK of 1 (on Postgres), and the save will fail.
-        # This is a regression test for ticket #3790.
+
         animal = Animal(
             name='Platypus',
             latin_name='Ornithorhynchus anatinus',
@@ -49,8 +50,6 @@ class TestFixtures(TestCase):
 
     def test_pretty_print_xml(self):
         """
-        Arguments:
-        - `self`:
         Regression test for ticket #4558 -- pretty printing of XML fixtures
         doesn't affect parsing of None values.
         """
@@ -73,7 +72,11 @@ class TestFixtures(TestCase):
         we need to make sure we don't discover the absolute path in every
         fixture directory.
         """
-        load_absolute_path = os.path.join(os.path.dirname(__file__), 'fixtures', 'absolute.json')
+        load_absolute_path = os.path.join(
+            os.path.dirname(__file__),
+            'fixtures',
+            'absolute.json'
+            )
         management.call_command(
             'loaddata',
             load_absolute_path,
@@ -97,7 +100,22 @@ class TestFixtures(TestCase):
         self.assertEqual(Parent.objects.all()[0].id, 1)
         self.assertEqual(Child.objects.all()[0].id, 1)
 
-# # Test for ticket #13030 -- natural keys deserialize with fk to inheriting model
+    # def test_nk_deserialize(self):
+    #     """
+    #     Test for ticket #13030
+    #     natural keys deserialize with fk to inheriting model
+    #     """
+    #     import pdb; pdb.set_trace() # FIXME
+    #     management.call_command(
+    #         'loaddata',
+    #         'nk-inheritance.json',
+    #         verbosity=0,
+    #         commit=False
+    #         )
+        # self.assertEqual(Parent.objects.all()[0].id, 1)
+        # self.assertEqual(Child.objects.all()[0].id, 1)
+
+
 
 # # load data with natural keys
 # >>> management.call_command('loaddata', 'nk-inheritance.json', verbosity=0)
@@ -117,33 +135,52 @@ class TestFixtures(TestCase):
 # >>> RefToNKChild.objects.get(pk=2)
 # <RefToNKChild: other text: Reference to NKChild fred:apple [NKChild fred:apple, NKChild james:banana]>
 
-# ###############################################
-# # Test for ticket #7572 -- MySQL has a problem if the same connection is
-# # used to create tables, load data, and then query over that data.
-# # To compensate, we close the connection after running loaddata.
-# # This ensures that a new connection is opened when test queries are issued.
+    def test_mysql_close_connection_after_loaddata(self):
+        """
+        Test for ticket #7572 -- MySQL has a problem if the same connection is
+        used to create tables, load data, and then query over that data.
+        To compensate, we close the connection after running loaddata.
+        This ensures that a new connection is opened when test queries are
+        issued.
+        """
+        management.call_command(
+            'loaddata',
+            'big-fixture.json',
+            verbosity=0,
+            commit=False
+            )
+        articles = Article.objects.exclude(id=9)
+        self.assertEqual(
+            articles.values_list('id', flat=True).__repr__(),
+            "[1, 2, 3, 4, 5, 6, 7, 8]"
+            )
+        # Just for good measure, run the same query again.
+        # Under the influence of ticket #7572, this will
+        # give a different result to the previous call.
+        self.assertEqual(
+            articles.values_list('id', flat=True).__repr__(),
+            "[1, 2, 3, 4, 5, 6, 7, 8]"
+            )
 
-# >>> management.call_command('loaddata', 'big-fixture.json', verbosity=0)
-
-# >>> articles = Article.objects.exclude(id=9)
-# >>> articles.values_list('id', flat=True)
-# [1, 2, 3, 4, 5, 6, 7, 8]
-
-# # Just for good measure, run the same query again. Under the influence of
-# # ticket #7572, this will give a different result to the previous call.
-# >>> articles.values_list('id', flat=True)
-# [1, 2, 3, 4, 5, 6, 7, 8]
-
-# ###############################################
-# # Test for tickets #8298, #9942 - Field values should be coerced into the
-# # correct type by the deserializer, not as part of the database write.
-
-# >>> models.signals.pre_save.connect(animal_pre_save_check)
-# >>> management.call_command('loaddata', 'animal.xml', verbosity=0)
-# Count = 42 (<type 'int'>)
-# Weight = 1.2 (<type 'float'>)
-
-# >>> models.signals.pre_save.disconnect(animal_pre_save_check)
+    def test_field_value_coerce(self):
+        """
+        Test for tickets #8298, #9942 - Field values should be coerced into the
+        correct type by the deserializer, not as part of the database write.
+        """
+        sys.stdout = StringIO()
+        signals.pre_save.connect(animal_pre_save_check)
+        management.call_command(
+            'loaddata',
+            'animal.xml',
+            verbosity=0,
+            commit=False
+            )
+        self.assertEqual(
+            sys.stdout.getvalue(),
+            "Count = 42 (<type 'int'>)\nWeight = 1.2 (<type 'float'>)\n"
+            )
+        signals.pre_save.disconnect(animal_pre_save_check)
+        sys.stdout = sys.__stdout__
 
 # ###############################################
 # # Regression for #11286 -- Ensure that dumpdata honors the default manager
@@ -256,7 +293,7 @@ class TestFixtureLoadErrors(TestCase):
 
     def test_unknown_format(self):
         """
-        Loading data of an unknown format should fail        
+        Loading data of an unknown format should fail
         """
         management.call_command(
             'loaddata',
@@ -264,7 +301,10 @@ class TestFixtureLoadErrors(TestCase):
             verbosity=0,
             commit=False
             )
-        self.assertEqual(sys.stderr.getvalue(), "Problem installing fixture 'bad_fixture1': unkn is not a known serialization format.\n")
+        self.assertEqual(
+            sys.stderr.getvalue(),
+            "Problem installing fixture 'bad_fixture1': unkn is not a known serialization format.\n"
+            )
 
     def test_invalid_data(self):
         """
@@ -276,7 +316,10 @@ class TestFixtureLoadErrors(TestCase):
             verbosity=0,
             commit=False
             )
-        self.assertEqual(sys.stderr.getvalue(), "No fixture data found for 'bad_fixture2'. (File format may be invalid.)\n")
+        self.assertEqual(
+            sys.stderr.getvalue(),
+            "No fixture data found for 'bad_fixture2'. (File format may be invalid.)\n"
+            )
 
     def test_invalid_data_no_ext(self):
         """
@@ -288,7 +331,10 @@ class TestFixtureLoadErrors(TestCase):
             verbosity=0,
             commit=False
             )
-        self.assertEqual(sys.stderr.getvalue(), "No fixture data found for 'bad_fixture2'. (File format may be invalid.)\n")
+        self.assertEqual(
+            sys.stderr.getvalue(),
+            "No fixture data found for 'bad_fixture2'. (File format may be invalid.)\n"
+            )
 
     def test_empty(self):
         """
@@ -300,7 +346,10 @@ class TestFixtureLoadErrors(TestCase):
             verbosity=0,
             commit=False
             )
-        self.assertEqual(sys.stderr.getvalue(), "No fixture data found for 'empty'. (File format may be invalid.)\n")
+        self.assertEqual(
+            sys.stderr.getvalue(),
+            "No fixture data found for 'empty'. (File format may be invalid.)\n"
+            )
 
     def test_abort_loaddata_on_error(self):
         """
@@ -312,7 +361,10 @@ class TestFixtureLoadErrors(TestCase):
             verbosity=0,
             commit=False
             )
-        self.assertEqual(sys.stderr.getvalue(), "No fixture data found for 'empty'. (File format may be invalid.)\n")
+        self.assertEqual(
+            sys.stderr.getvalue(),
+            "No fixture data found for 'empty'. (File format may be invalid.)\n"
+            )
 
     def test_error_message(self):
         """
@@ -325,4 +377,7 @@ class TestFixtureLoadErrors(TestCase):
             verbosity=0,
             commit=False
             )
-        self.assertEqual(sys.stderr.getvalue(), "No fixture data found for 'bad_fixture2'. (File format may be invalid.)\n")
+        self.assertEqual(
+            sys.stderr.getvalue(),
+            "No fixture data found for 'bad_fixture2'. (File format may be invalid.)\n"
+            )
