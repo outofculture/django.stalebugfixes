@@ -8,13 +8,14 @@ except ImportError:
     from StringIO import StringIO
 
 from django.core import management
+from django.core.management.commands.dumpdata import sort_dependencies
+from django.core.management.base import CommandError
 from django.db.models import signals
 from django.test import TestCase
 
-from models import Animal, Plant, Stuff
+from models import Animal, Stuff
 from models import Absolute, Parent, Child
-from models import Channel, Article, Widget, WidgetProxy
-from models import TestManager
+from models import Article, Widget
 from models import Store, Person, Book
 from models import NKManager, NKChild, RefToNKChild
 from models import Circle1, Circle2, Circle3, Circle4, Circle5, Circle6
@@ -23,6 +24,13 @@ from models import animal_pre_save_check
 
 
 class TestFixtures(TestCase):
+
+    def assertRaisesMessage(self, exc, msg, func, *args, **kwargs):
+        try:
+            func(*args, **kwargs)
+        except Exception, e:
+            self.assertEqual(msg, str(e))
+            self.assertTrue(isinstance(e, exc), "Expected %s, got %s" % (exc, type(e)))
 
     def test_duplicate_pk(self):
         """
@@ -219,55 +227,128 @@ class TestFixtures(TestCase):
             )
         sys.stdout = sys.__stdout__
 
+    def test_proxy_model_included(self):
+        """
+        Regression for #11428 - Proxy models aren't included when you dumpdata
+        """
+        sys.stdout = StringIO()
+        # Create an instance of the concrete class
+        Widget(name='grommet').save()
+        management.call_command(
+            'dumpdata',
+            'fixtures_regress.widget',
+            'fixtures_regress.widgetproxy',
+            format='json',
+            )
+        self.assertEqual(
+            sys.stdout.getvalue(),
+            """[{"pk": 1, "model": "fixtures_regress.widget", "fields": {"name": "grommet"}}]"""
+            )
+        sys.stdout = sys.__stdout__
 
-# ###############################################
-# # Regression for #11428 - Proxy models aren't included when you dumpdata
+    def test_nk_on_serialize(self):
+        """
+        Check that natural key requirements are taken into account
+        when serializing models
+        """
+        sys.stdout = StringIO()
+        management.call_command(
+            'loaddata',
+            'forward_ref_lookup.json',
+            verbosity=0,
+            commit=False
+            )
+        management.call_command(
+            'dumpdata',
+            'fixtures_regress.book',
+            'fixtures_regress.person',
+            'fixtures_regress.store',
+            verbosity=0,
+            format='json',
+            use_natural_keys=True,
+            )
+        self.assertEqual(
+            sys.stdout.getvalue(),
+            """[{"pk": 2, "model": "fixtures_regress.store", "fields": {"name": "Amazon"}}, {"pk": 3, "model": "fixtures_regress.store", "fields": {"name": "Borders"}}, {"pk": 4, "model": "fixtures_regress.person", "fields": {"name": "Neal Stephenson"}}, {"pk": 1, "model": "fixtures_regress.book", "fields": {"stores": [["Amazon"], ["Borders"]], "name": "Cryptonomicon", "author": ["Neal Stephenson"]}}]"""
+            )
+        sys.stdout = sys.__stdout__
 
-# # Flush out the database first
-# >>> management.call_command('reset', 'fixtures_regress', interactive=False, verbosity=0)
+    def test_dependency_sorting(self):
+        """
+        Now lets check the dependency sorting explicitly
+        It doesn't matter what order you mention the models
+        Store *must* be serialized before then Person, and both
+        must be serialized before Book.
+        """
+        sorted_deps = sort_dependencies(
+            [('fixtures_regress', [Book, Person, Store])]
+            )
+        self.assertEqual(
+            sorted_deps,
+            [Store, Person, Book]
+            )
 
-# # Create an instance of the concrete class
-# >>> Widget(name='grommet').save()
+    def test_dependency_sorting_2(self):
+        sorted_deps = sort_dependencies(
+            [('fixtures_regress', [Book, Store, Person])]
+            )
+        self.assertEqual(
+            sorted_deps,
+            [Store, Person, Book]
+            )
 
-# # Dump data for the entire app. The proxy class shouldn't be included
-# >>> management.call_command('dumpdata', 'fixtures_regress.widget', 'fixtures_regress.widgetproxy', format='json')
-# [{"pk": 1, "model": "fixtures_regress.widget", "fields": {"name": "grommet"}}]
+    def test_dependency_sorting_3(self):
+        sorted_deps = sort_dependencies(
+            [('fixtures_regress', [Store, Book, Person])]
+            )
+        self.assertEqual(
+            sorted_deps,
+            [Store, Person, Book]
+            )
 
-# ###############################################
-# # Check that natural key requirements are taken into account
-# # when serializing models
-# >>> management.call_command('loaddata', 'forward_ref_lookup.json', verbosity=0)
+    def test_dependency_sorting_4(self):
+        sorted_deps = sort_dependencies(
+            [('fixtures_regress', [Store, Person, Book])]
+            )
+        self.assertEqual(
+            sorted_deps,
+            [Store, Person, Book]
+            )
 
-# >>> management.call_command('dumpdata', 'fixtures_regress.book', 'fixtures_regress.person', 'fixtures_regress.store', verbosity=0, use_natural_keys=True)
-# [{"pk": 2, "model": "fixtures_regress.store", "fields": {"name": "Amazon"}}, {"pk": 3, "model": "fixtures_regress.store", "fields": {"name": "Borders"}}, {"pk": 4, "model": "fixtures_regress.person", "fields": {"name": "Neal Stephenson"}}, {"pk": 1, "model": "fixtures_regress.book", "fields": {"stores": [["Amazon"], ["Borders"]], "name": "Cryptonomicon", "author": ["Neal Stephenson"]}}]
+    def test_dependency_sorting_5(self):
+        sorted_deps = sort_dependencies(
+            [('fixtures_regress', [Person, Book, Store])]
+            )
+        self.assertEqual(
+            sorted_deps,
+            [Store, Person, Book]
+            )
 
-# # Now lets check the dependency sorting explicitly
+    def test_dependency_sorting_6(self):
+        sorted_deps = sort_dependencies(
+            [('fixtures_regress', [Person, Store, Book])]
+            )
+        self.assertEqual(
+            sorted_deps,
+            [Store, Person, Book]
+            )
 
-# # It doesn't matter what order you mention the models
-# # Store *must* be serialized before then Person, and both
-# # must be serialized before Book.
-# >>> from django.core.management.commands.dumpdata import sort_dependencies
-# >>> sort_dependencies([('fixtures_regress', [Book, Person, Store])])
-# [<class 'regressiontests.fixtures_regress.models.Store'>, <class 'regressiontests.fixtures_regress.models.Person'>, <class 'regressiontests.fixtures_regress.models.Book'>]
+    def test_dependency_sorting_dangling(self):
+        sorted_deps = sort_dependencies(
+            [('fixtures_regress', [Person, Circle1, Store, Book])]
+            )
+        self.assertEqual(
+            sorted_deps,
+            [Circle1, Store, Person, Book]
+            )
 
-# >>> sort_dependencies([('fixtures_regress', [Book, Store, Person])])
-# [<class 'regressiontests.fixtures_regress.models.Store'>, <class 'regressiontests.fixtures_regress.models.Person'>, <class 'regressiontests.fixtures_regress.models.Book'>]
-
-# >>> sort_dependencies([('fixtures_regress', [Store, Book, Person])])
-# [<class 'regressiontests.fixtures_regress.models.Store'>, <class 'regressiontests.fixtures_regress.models.Person'>, <class 'regressiontests.fixtures_regress.models.Book'>]
-
-# >>> sort_dependencies([('fixtures_regress', [Store, Person, Book])])
-# [<class 'regressiontests.fixtures_regress.models.Store'>, <class 'regressiontests.fixtures_regress.models.Person'>, <class 'regressiontests.fixtures_regress.models.Book'>]
-
-# >>> sort_dependencies([('fixtures_regress', [Person, Book, Store])])
-# [<class 'regressiontests.fixtures_regress.models.Store'>, <class 'regressiontests.fixtures_regress.models.Person'>, <class 'regressiontests.fixtures_regress.models.Book'>]
-
-# >>> sort_dependencies([('fixtures_regress', [Person, Store, Book])])
-# [<class 'regressiontests.fixtures_regress.models.Store'>, <class 'regressiontests.fixtures_regress.models.Person'>, <class 'regressiontests.fixtures_regress.models.Book'>]
-
-# # A dangling dependency - assume the user knows what they are doing.
-# >>> sort_dependencies([('fixtures_regress', [Person, Circle1, Store, Book])])
-# [<class 'regressiontests.fixtures_regress.models.Circle1'>, <class 'regressiontests.fixtures_regress.models.Store'>, <class 'regressiontests.fixtures_regress.models.Person'>, <class 'regressiontests.fixtures_regress.models.Book'>]
+    def test_dependency_sorting_tight_circular(self):
+        self.assertRaisesMessage(
+            CommandError,
+            """Can't resolve dependencies for fixtures_regress.Circle1, fixtures_regress.Circle2 in serialized app list.""",
+            sort_dependencies,
+            [('fixtures_regress', [Person, Circle2, Circle1, Store, Book])],
+            )
 
 # # A tight circular dependency
 # >>> sort_dependencies([('fixtures_regress', [Person, Circle2, Circle1, Store, Book])])
@@ -305,8 +386,6 @@ class TestFixtures(TestCase):
 
 # >>> Book.objects.all()
 # [<Book: Cryptonomicon by Neal Stephenson (available at Amazon, Borders)>, <Book: Ender's Game by Orson Scott Card (available at Collins Bookstore)>, <Book: Permutation City by Greg Egan (available at Angus and Robertson)>]
-
-# """}
 
 
 class TestFixtureLoadErrors(TestCase):
