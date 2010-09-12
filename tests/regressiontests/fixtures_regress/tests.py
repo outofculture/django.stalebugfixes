@@ -411,7 +411,6 @@ class TestFixtures(TestCase):
         relationships needs to not pull in extra dependencies when they
         are not explicitly defined.
         """
-        import ipdb; ipdb.set_trace()
         sorted_deps = sort_dependencies(
             [('fixtures_regress', [Book, Circle1])],
             )
