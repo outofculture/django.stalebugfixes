@@ -362,10 +362,9 @@ class TestFixtures(TestCase):
         sorted_deps = sort_dependencies(
             [('fixtures_regress', [Person, Circle1, Store, Book])]
             )
-        self.assertEqual(
-            sorted_deps,
-            [Circle1, Store, Person, Book]
-            )
+        # The specific placement of Circle1 is irrelevant.
+        assert sorted_deps.index(Store) < sorted_deps.index(Person)
+        assert sorted_deps.index(Person) < sorted_deps.index(Book)
 
     def test_dependency_sorting_tight_circular(self):
         self.assertRaisesMessage(
