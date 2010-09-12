@@ -132,8 +132,10 @@ def sort_dependencies(app_list):
         if model_list is None:
             model_list = get_models(app)
 
-        for model in model_list:
+        while model_list:
+            model = model_list.pop()
             models.add(model)
+
             # Add any explicitly defined dependencies
             if hasattr(model, 'natural_key'):
                 deps = getattr(model.natural_key, 'dependencies', [])
@@ -142,17 +144,26 @@ def sort_dependencies(app_list):
             else:
                 deps = []
 
-            # Now add a dependency for any FK or M2M relation with
-            # a model that defines a natural key
+            # Now add a dependency for any FK relation with a model
+            # that defines a natural key
             for field in model._meta.fields:
                 if hasattr(field.rel, 'to'):
                     rel_model = field.rel.to
                     if hasattr(rel_model, 'natural_key'):
                         deps.append(rel_model)
+            # Add a dependency for M2M tables as needed.
             for field in model._meta.many_to_many:
-                rel_model = field.rel.to
-                if hasattr(rel_model, 'natural_key'):
-                    deps.append(rel_model)
+                m2m_model = field.rel.through
+                #:MC: why are only models with a natural_key attr being considered?
+                if hasattr(m2m_model, 'natural_key'):
+                    # if the m2m model is not in the model_dependencies list, 
+                    # add it for processing
+                    if m2m_model not in model_list and \
+                            any([f.rel.to in model_list
+                                 for f in m2m_model._meta.fields
+                                 if f.rel and f.rel.to != model]):
+                        model_list.append(m2m_model)
+
             model_dependencies.append((model, deps))
 
     model_dependencies.reverse()
