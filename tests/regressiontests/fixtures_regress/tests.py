@@ -391,6 +391,15 @@ class TestFixtures(TestCase):
             [('fixtures_regress', [Book, Circle3])],
             )
 
+    def test_dependency_sorting_m2m(self):
+        sorted_deps = sort_dependencies(
+            [('fixtures_regress', [Tagger, Posting, Tag, TaggerTag, PostingTag])],
+            )
+        self.assertEqual(
+            sorted_deps,
+            [Tagger, Posting, Tag, TaggerTag, PostingTag]
+            )
+
     def test_dependency_sorting_long(self):
         self.assertRaisesMessage(
             CommandError,
