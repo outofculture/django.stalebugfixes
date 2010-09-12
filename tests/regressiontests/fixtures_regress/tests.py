@@ -405,6 +405,35 @@ class TestFixtures(TestCase):
         assert sorted_deps.index(Tagger) < sorted_deps.index(TaggerTag)
         assert sorted_deps.index(Tag) < sorted_deps.index(TaggerTag)
 
+    def test_sorting_dependencies_for_simple_m2m(self):
+        """
+        Test for ticket #14226 -- sorting the dependencies of ManyToMany
+        relationships needs to not pull in extra dependencies when they
+        are not explicitly defined.
+        """
+        import ipdb; ipdb.set_trace()
+        sorted_deps = sort_dependencies(
+            [('fixtures_regress', [Book, Circle1])],
+            )
+        self.assertEqual(
+            len(sorted_deps),
+            2
+            )
+
+    def test_sorting_dependencies_for_m2ms_with_explicit_through_table(self):
+        """
+        Test for ticket #14226 -- sorting the dependencies of ManyToMany
+        relationships needs to pull in extra dependencies when they are
+        explicitly defined, but only .
+        """
+        sorted_deps = sort_dependencies(
+            [('fixtures_regress', [Tagger, Tag])],
+            )
+        self.assertEqual(
+            len(sorted_deps),
+            3
+            )
+
     def test_dependency_sorting_long(self):
         self.assertRaisesMessage(
             CommandError,
@@ -451,26 +480,6 @@ class TestFixtures(TestCase):
             """[<Book: Cryptonomicon by Neal Stephenson (available at Amazon, Borders)>, <Book: Ender's Game by Orson Scott Card (available at Collins Bookstore)>, <Book: Permutation City by Greg Egan (available at Angus and Robertson)>]"""
             )
 
-    def test_dumpdata_of_dependencies_across_many_to_many(self):
-        from datetime import datetime
-        tagger = Tagger.objects.create(name='some punk')
-        posting = Posting.objects.create(tagger=tagger, time=datetime.now(),
-                                         text='Eat your greens.',)
-        tag = Tag.objects.create(name='good advice')
-        PostingTag.objects.create(posting=posting, tag=tag)
-        TaggerTag.objects.create(tagger=tagger, tag=tag)
-
-        management.call_command(
-            'dumpdata',
-            'fixtures_regress.tagger',
-            'fixtures_regress.posting',
-            'fixtures_regress.tag',
-            'fixtures_regress.taggertag',
-            'fixtures_regress.postingtag',
-            verbosity=0,
-            format='json',
-            use_natural_keys=True,
-            )
 
 class TestFixtureLoadErrors(TestCase):
     """
