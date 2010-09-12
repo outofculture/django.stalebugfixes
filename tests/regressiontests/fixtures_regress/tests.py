@@ -391,13 +391,19 @@ class TestFixtures(TestCase):
             )
 
     def test_dependency_sorting_m2m(self):
+        """
+        Test for ticket #14226 -- ManyToMany relationships can be
+        defined on any side of the relationship.
+        """
         sorted_deps = sort_dependencies(
-            [('fixtures_regress', [Tagger, Posting, Tag, TaggerTag, PostingTag])],
+            [('fixtures_regress', [Posting, Tagger, TaggerTag, Tag, PostingTag])],
             )
-        self.assertEqual(
-            sorted_deps,
-            [Tagger, Posting, Tag, TaggerTag, PostingTag]
-            )
+        assert sorted_deps.index(Tag) < sorted_deps.index(Tagger)
+        assert sorted_deps.index(Tagger) < sorted_deps.index(Posting)
+        assert sorted_deps.index(Posting) < sorted_deps.index(PostingTag)
+        assert sorted_deps.index(Tag) < sorted_deps.index(PostingTag)
+        assert sorted_deps.index(Tagger) < sorted_deps.index(TaggerTag)
+        assert sorted_deps.index(Tag) < sorted_deps.index(TaggerTag)
 
     def test_dependency_sorting_long(self):
         self.assertRaisesMessage(
