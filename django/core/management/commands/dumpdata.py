@@ -154,15 +154,14 @@ def sort_dependencies(app_list):
             # Add a dependency for M2M tables as needed.
             for field in model._meta.many_to_many:
                 m2m_model = field.rel.through
-                #:MC: why are only models with a natural_key attr being considered?
-                if hasattr(m2m_model, 'natural_key'):
-                    # if the m2m model is not in the model_dependencies list, 
-                    # add it for processing
-                    if m2m_model not in model_list and \
-                            any([f.rel.to in model_list
-                                 for f in m2m_model._meta.fields
-                                 if f.rel and f.rel.to != model]):
-                        model_list.append(m2m_model)
+                # If the m2m bridge-model is not in the model_list,
+                # but the table it points to is, add it for
+                # processing.
+                if m2m_model not in model_list and \
+                        any([f.rel.to in model_list
+                             for f in m2m_model._meta.fields
+                             if f.rel and f.rel.to != model]):
+                    model_list.append(m2m_model)
 
             model_dependencies.append((model, deps))
 
